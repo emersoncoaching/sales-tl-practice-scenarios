@@ -30,7 +30,8 @@ Deno.serve(async (req) => {
     const serviceRoleKey = requiredEnv("SUPABASE_SERVICE_ROLE_KEY");
     const resendApiKey = requiredEnv("RESEND_API_KEY");
     const notifyTo = Deno.env.get("NOTIFY_TO") || "dan@emersoncoaching.com.au";
-    const notifyFrom = requiredEnv("NOTIFY_FROM");
+    const notifyFrom = Deno.env.get("NOTIFY_FROM") || "Dan at Emerson Coaching <dan@emersoncoaching.com.au>";
+    const replyTo = Deno.env.get("REPLY_TO") || "dan@emersoncoaching.com.au";
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
     const { data: submission, error } = await supabase
@@ -78,6 +79,7 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         from: notifyFrom,
         to: [notifyTo],
+        reply_to: replyTo,
         subject,
         text,
         html,

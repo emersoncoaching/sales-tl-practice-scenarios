@@ -15,10 +15,11 @@ Live site: https://dandobos.github.io/sales-tl-practice-scenarios/
 To email Dan when a new response arrives, deploy the Supabase Edge Function in `supabase/functions/notify-sales-tl-submission` and set these function secrets:
 
 ```sh
-RESEND_API_KEY=...
-NOTIFY_FROM=hiring@emersoncoaching.com.au
-NOTIFY_TO=dan@emersoncoaching.com.au
-SUPABASE_SERVICE_ROLE_KEY=...
+RESEND_API_KEY="..."
+NOTIFY_FROM="Dan at Emerson Coaching <dan@emersoncoaching.com.au>"
+NOTIFY_TO="dan@emersoncoaching.com.au"
+REPLY_TO="dan@emersoncoaching.com.au"
+SUPABASE_SERVICE_ROLE_KEY="..."
 ```
 
 The applicant-facing app only needs the public anon key. The service role key stays in Supabase function secrets.
