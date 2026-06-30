@@ -149,6 +149,44 @@ h3 {
   padding-top: 28px;
 }
 
+.start-layout {
+  display: grid;
+  min-height: clamp(340px, 46vh, 500px);
+  align-items: center;
+  padding: clamp(16px, 4vw, 52px) 0;
+}
+
+.start-panel {
+  display: grid;
+  gap: clamp(22px, 3vw, 30px);
+  width: min(720px, 100%);
+  margin: 0 auto;
+  padding: clamp(24px, 4vw, 44px);
+}
+
+.start-heading {
+  display: grid;
+  gap: 14px;
+}
+
+.start-heading h2 {
+  max-width: 610px;
+  margin-bottom: 0;
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.02;
+}
+
+.start-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.start-actions {
+  justify-content: flex-end;
+  margin-top: 0;
+}
+
 .intro-grid,
 .scenario-grid,
 .review-grid,
@@ -185,6 +223,10 @@ h3 {
   display: grid;
   gap: 8px;
   margin-bottom: 18px;
+}
+
+.start-fields .field {
+  margin-bottom: 0;
 }
 
 label {
@@ -278,6 +320,10 @@ a:focus-visible {
   gap: 12px;
   align-items: center;
   margin-top: 22px;
+}
+
+.actions.start-actions {
+  margin-top: 0;
 }
 
 .hint,
@@ -486,6 +532,25 @@ video {
   .receipt-grid,
   .comparison {
     grid-template-columns: 1fr;
+  }
+
+  .start-layout {
+    min-height: auto;
+    align-items: start;
+    padding-top: 4px;
+  }
+
+  .start-fields {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .start-actions {
+    justify-content: stretch;
+  }
+
+  .start-actions .primary {
+    width: 100%;
   }
 
   h1 {

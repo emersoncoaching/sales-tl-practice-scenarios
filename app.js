@@ -48,21 +48,23 @@
   function renderStart() {
     setStatus("Practice task");
     app.innerHTML = `
-      <section class="intro-grid">
-        <div class="intro-copy">
-          <h2>Give feedback on four short scenarios</h2>
-          ${configWarning()}
-        </div>
-        <form class="panel form-panel" id="start-form">
-          <div class="field">
-            <label for="name">Name</label>
-            <input id="name" name="name" autocomplete="name" required value="${escapeAttr(state.applicant.name)}">
+      <section class="start-layout">
+        <form class="panel start-panel" id="start-form">
+          <div class="start-heading">
+            <h2>Give feedback on four short scenarios</h2>
+            ${configWarning()}
           </div>
-          <div class="field">
-            <label for="email">Email</label>
-            <input id="email" name="email" type="email" autocomplete="email" required value="${escapeAttr(state.applicant.email)}">
+          <div class="start-fields">
+            <div class="field">
+              <label for="name">Name</label>
+              <input id="name" name="name" autocomplete="name" required value="${escapeAttr(state.applicant.name)}">
+            </div>
+            <div class="field">
+              <label for="email">Email</label>
+              <input id="email" name="email" type="email" autocomplete="email" required value="${escapeAttr(state.applicant.email)}">
+            </div>
           </div>
-          <div class="actions">
+          <div class="actions start-actions">
             <button class="primary" type="submit">Start scenarios</button>
           </div>
         </form>
