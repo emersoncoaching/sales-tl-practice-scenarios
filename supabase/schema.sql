@@ -148,7 +148,7 @@ set search_path = public
 stable
 as $$
 begin
-  if encode(digest(coalesce(p_admin_token, ''), 'sha256'), 'hex') <> '0da97648798878c53cc30dcd9843ecc6392aa972d69c3d846dfaff5e6d4be247' then
+  if encode(extensions.digest(coalesce(p_admin_token, ''), 'sha256'), 'hex') <> '59d1342350ac10f0db054214ea89b17d86b0fb35e6fa109c28e250964d27a850' then
     raise exception 'Invalid admin token.';
   end if;
 
