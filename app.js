@@ -4,6 +4,7 @@
   const app = document.querySelector("#app");
   const statusPill = document.querySelector("#status-pill");
   const draftKey = "sales-tl-scenarios-draft-v1";
+  const privateAccessKey = "sales-tl-private-access-v1";
 
   const state = {
     applicant: loadDraft().applicant || {
@@ -34,12 +35,12 @@
     const receiptToken = getParam("receipt");
 
     if (adminToken) {
-      renderAdminDashboard(adminToken);
+      renderPrivateAccessGate("Private dashboard", () => renderAdminDashboard(adminToken));
       return;
     }
 
     if (reviewToken) {
-      renderReview(reviewToken);
+      renderPrivateAccessGate("Private review", () => renderReview(reviewToken));
       return;
     }
 
@@ -339,6 +340,56 @@
     });
   }
 
+  function renderPrivateAccessGate(statusText, onUnlocked) {
+    if (!config.privateAccessPasswordHash || hasPrivateAccess()) {
+      onUnlocked();
+      return;
+    }
+
+    setStatus("Private access");
+    app.innerHTML = `
+      <section class="access-layout">
+        <form class="panel access-panel" id="private-access-form">
+          <div>
+            <p class="eyebrow">${escapeHtml(statusText)}</p>
+            <h2>Enter password</h2>
+            <p class="hint">You only need to enter this once on this browser.</p>
+          </div>
+          <div class="field">
+            <label for="private-password">Password</label>
+            <input id="private-password" name="password" type="password" autocomplete="current-password" required autofocus>
+          </div>
+          <div class="actions">
+            <button class="primary" type="submit">Unlock</button>
+          </div>
+        </form>
+      </section>
+    `;
+
+    const form = document.querySelector("#private-access-form");
+    const password = document.querySelector("#private-password");
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const button = form.querySelector("button");
+      button.disabled = true;
+      button.textContent = "Checking...";
+
+      try {
+        const enteredHash = await sha256(String(password.value || ""));
+        if (enteredHash !== config.privateAccessPasswordHash) {
+          throw new Error("Password not recognised.");
+        }
+        localStorage.setItem(privateAccessKey, enteredHash);
+        onUnlocked();
+      } catch (error) {
+        showInlineError(form, error.message || "Password not recognised.");
+        button.disabled = false;
+        button.textContent = "Unlock";
+        password.select();
+      }
+    });
+  }
+
   async function renderAdminDashboard(token) {
     setStatus("Private dashboard");
     app.innerHTML = `
@@ -604,6 +655,21 @@
       return "This dashboard link is not recognised.";
     }
     return message || "Please refresh the page and try again.";
+  }
+
+  function hasPrivateAccess() {
+    return localStorage.getItem(privateAccessKey) === config.privateAccessPasswordHash;
+  }
+
+  async function sha256(value) {
+    if (!window.crypto || !window.crypto.subtle) {
+      throw new Error("This browser cannot check the password. Please use a current browser.");
+    }
+    const bytes = new TextEncoder().encode(value);
+    const digest = await window.crypto.subtle.digest("SHA-256", bytes);
+    return Array.from(new Uint8Array(digest))
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
   }
 
   function getAnswerHtml(scenarioId) {

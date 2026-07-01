@@ -157,6 +157,21 @@ h3 {
   padding: clamp(16px, 4vw, 52px) 0;
 }
 
+.access-layout {
+  display: grid;
+  min-height: clamp(320px, 42vh, 460px);
+  align-items: center;
+  justify-items: center;
+  padding: clamp(16px, 4vw, 48px) 0;
+}
+
+.access-panel {
+  display: grid;
+  gap: 22px;
+  width: min(460px, 100%);
+  padding: clamp(24px, 4vw, 38px);
+}
+
 .start-panel {
   display: grid;
   gap: clamp(22px, 3vw, 30px);
@@ -754,6 +769,12 @@ video {
   }
 
   .start-layout {
+    min-height: auto;
+    align-items: start;
+    padding-top: 4px;
+  }
+
+  .access-layout {
     min-height: auto;
     align-items: start;
     padding-top: 4px;
