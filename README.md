@@ -11,13 +11,14 @@ Target live site: https://emersoncoaching.github.io/sales-tl-practice-scenarios/
 - The four compressed scenario videos are included in `assets/videos/`.
 - Applicants submit text responses with light rich text formatting.
 - Dan reviews submissions from the private dashboard URL stored in `private/admin-dashboard.md`.
+- Review pages can mark submissions accepted or rejected, and the dashboard groups open, accepted, and rejected submissions.
 - Dan-facing dashboard and review pages require a one-time private-access password in each browser.
 
 ## Private Dashboard Setup
 
 Email notifications are intentionally not required. The dashboard uses an unguessable `?admin=` URL and a Supabase RPC function that compares the token to a SHA-256 hash.
 
-To enable the dashboard in Supabase, run `supabase/admin-dashboard.sql` in the Supabase SQL editor.
+To enable the dashboard and review-status actions in Supabase, run `supabase/admin-dashboard.sql` in the Supabase SQL editor.
 
 The real admin token is not committed to GitHub. Keep `private/admin-dashboard.md` local.
 

@@ -297,6 +297,8 @@
       candidate_name: state.applicant.name,
       candidate_email: state.applicant.email,
       created_at: new Date().toISOString(),
+      review_status: "open",
+      reviewed_at: null,
       responses,
       applicant_token: applicantToken,
       review_token: reviewToken,
@@ -436,7 +438,8 @@
         : JSON.parse(localStorage.getItem(`demo-review-${token}`) || "null");
 
       if (!submission) throw new Error("Review response not found.");
-      app.innerHTML = receiptMarkup(submission, true);
+      app.innerHTML = receiptMarkup(submission, true, token);
+      wireReviewDecision(token);
     } catch (error) {
       renderError("Review response not found", error.message);
     }
@@ -467,11 +470,54 @@
     return Array.isArray(data) ? data : [];
   }
 
+  async function updateReviewStatus(token, reviewStatus) {
+    const normalizedStatus = normalizeReviewStatus(reviewStatus);
+
+    if (isConfigured) {
+      const { data, error } = await supabaseClient.rpc("set_sales_tl_submission_review_status", {
+        p_review_token: token,
+        p_review_status: normalizedStatus,
+      });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      if (!row) throw new Error("Review response not found.");
+      return row;
+    }
+
+    const submission = JSON.parse(localStorage.getItem(`demo-review-${token}`) || "null");
+    if (!submission) throw new Error("Review response not found.");
+
+    const updatedSubmission = {
+      ...submission,
+      review_status: normalizedStatus,
+      reviewed_at: normalizedStatus === "open" ? null : new Date().toISOString(),
+    };
+
+    localStorage.setItem(`demo-review-${token}`, JSON.stringify(updatedSubmission));
+    if (updatedSubmission.applicant_token) {
+      const receipt = JSON.parse(localStorage.getItem(`demo-receipt-${updatedSubmission.applicant_token}`) || "null");
+      if (receipt) {
+        localStorage.setItem(
+          `demo-receipt-${updatedSubmission.applicant_token}`,
+          JSON.stringify({
+            ...receipt,
+            review_status: updatedSubmission.review_status,
+            reviewed_at: updatedSubmission.reviewed_at,
+          })
+        );
+      }
+    }
+    saveDemoAdminSubmission(updatedSubmission);
+    await wait(250);
+    return updatedSubmission;
+  }
+
   function adminDashboardMarkup(submissions, token) {
     const sortedSubmissions = submissions
       .slice()
       .sort((left, right) => new Date(right.created_at || 0) - new Date(left.created_at || 0));
     const latestSubmission = sortedSubmissions[0];
+    const groupedSubmissions = groupSubmissionsByReviewStatus(sortedSubmissions);
 
     return `
       <section class="admin-grid">
@@ -486,8 +532,16 @@
         <div class="dashboard-stack">
           <div class="dashboard-summary">
             <div>
-              <span class="summary-number">${sortedSubmissions.length}</span>
-              <span class="summary-label">${sortedSubmissions.length === 1 ? "submission" : "submissions"}</span>
+              <span class="summary-number">${groupedSubmissions.open.length}</span>
+              <span class="summary-label">open</span>
+            </div>
+            <div>
+              <span class="summary-number">${groupedSubmissions.accepted.length}</span>
+              <span class="summary-label">accepted</span>
+            </div>
+            <div>
+              <span class="summary-number">${groupedSubmissions.rejected.length}</span>
+              <span class="summary-label">rejected</span>
             </div>
             <div>
               <span class="summary-label">Latest</span>
@@ -498,7 +552,11 @@
           </div>
           ${
             sortedSubmissions.length
-              ? `<div class="submission-list">${sortedSubmissions.map(adminSubmissionCardMarkup).join("")}</div>`
+              ? `<div class="dashboard-sections">
+                  ${dashboardStatusSectionMarkup("open", groupedSubmissions.open)}
+                  ${dashboardStatusSectionMarkup("accepted", groupedSubmissions.accepted)}
+                  ${dashboardStatusSectionMarkup("rejected", groupedSubmissions.rejected)}
+                </div>`
               : emptyDashboardMarkup()
           }
         </div>
@@ -506,9 +564,41 @@
     `;
   }
 
+  function groupSubmissionsByReviewStatus(submissions) {
+    return submissions.reduce(
+      (groups, submission) => {
+        groups[normalizeReviewStatus(submission.review_status)].push(submission);
+        return groups;
+      },
+      { open: [], accepted: [], rejected: [] }
+    );
+  }
+
+  function dashboardStatusSectionMarkup(status, submissions) {
+    const meta = reviewStatusMeta(status);
+    return `
+      <section class="submission-section submission-section-${status}">
+        <header class="submission-section-header">
+          <div>
+            <h3>${escapeHtml(meta.sectionTitle)}</h3>
+            <p>${escapeHtml(meta.sectionHint)}</p>
+          </div>
+          <span class="section-count">${submissions.length}</span>
+        </header>
+        ${
+          submissions.length
+            ? `<div class="submission-list">${submissions.map(adminSubmissionCardMarkup).join("")}</div>`
+            : `<p class="section-empty">${escapeHtml(meta.emptyText)}</p>`
+        }
+      </section>
+    `;
+  }
+
   function adminSubmissionCardMarkup(submission) {
     const urls = buildUrls(submission.applicant_token, submission.review_token);
     const responses = normalizeResponses(submission.responses);
+    const reviewStatus = normalizeReviewStatus(submission.review_status);
+    const statusMeta = reviewStatusMeta(reviewStatus);
     const answeredCount = responses.filter((response) =>
       richTextToPlainText(response.answerHtml || plainTextToHtml(response.answer || "")).trim()
     ).length;
@@ -520,10 +610,18 @@
             <h3>${escapeHtml(submission.candidate_name || "Applicant")}</h3>
             <p class="submission-email">${escapeHtml(submission.candidate_email || "")}</p>
           </div>
-          <span class="submission-date">${escapeHtml(formatDate(submission.created_at))}</span>
+          <div class="submission-card-status">
+            <span class="status-badge status-${reviewStatus}">${escapeHtml(statusMeta.label)}</span>
+            <span class="submission-date">${escapeHtml(formatDate(submission.created_at))}</span>
+          </div>
         </div>
         <div class="submission-meta">
           <span>${answeredCount} of ${scenarios.length} responses</span>
+          ${
+            reviewStatus !== "open" && submission.reviewed_at
+              ? `<span>${escapeHtml(statusMeta.label)} ${escapeHtml(formatDate(submission.reviewed_at))}</span>`
+              : ""
+          }
           ${
             submission.starhire_candidate_id
               ? `<span>StarHire ID ${escapeHtml(submission.starhire_candidate_id)}</span>`
@@ -562,7 +660,7 @@
     });
   }
 
-  function receiptMarkup(submission, includeDanResponses) {
+  function receiptMarkup(submission, includeDanResponses, reviewToken = "") {
     const responses = normalizeResponses(submission.responses);
     return `
       <section class="${includeDanResponses ? "review-grid" : "receipt-grid"}">
@@ -575,6 +673,7 @@
               : ""
           }
           <p class="hint">Submitted ${formatDate(submission.created_at)}</p>
+          ${includeDanResponses ? reviewDecisionMarkup(submission, reviewToken) : ""}
         </aside>
         <div class="panel form-panel">
           <div class="${includeDanResponses ? "review-list" : "receipt-list"}">
@@ -609,6 +708,72 @@
     `;
   }
 
+  function reviewDecisionMarkup(submission, reviewToken) {
+    const reviewStatus = normalizeReviewStatus(submission.review_status);
+    const meta = reviewStatusMeta(reviewStatus);
+    const reviewedText =
+      reviewStatus !== "open" && submission.reviewed_at
+        ? `${meta.label} ${formatDate(submission.reviewed_at)}`
+        : "No decision yet";
+
+    return `
+      <div class="review-decision" data-review-token="${escapeAttr(reviewToken)}">
+        <div class="review-decision-head">
+          <span class="status-badge status-${reviewStatus}">${escapeHtml(meta.label)}</span>
+          <span class="decision-timestamp">${escapeHtml(reviewedText)}</span>
+        </div>
+        <div class="decision-actions">
+          <button class="primary decision-button" type="button" data-review-status="accepted" ${
+            reviewStatus === "accepted" ? "disabled" : ""
+          }>Accept</button>
+          <button class="secondary reject-button decision-button" type="button" data-review-status="rejected" ${
+            reviewStatus === "rejected" ? "disabled" : ""
+          }>Reject</button>
+        </div>
+        <p class="hint decision-message" aria-live="polite">${escapeHtml(meta.reviewHint)}</p>
+      </div>
+    `;
+  }
+
+  function wireReviewDecision(token) {
+    const decisionPanel = document.querySelector(".review-decision");
+    if (!decisionPanel) return;
+
+    const buttons = Array.from(decisionPanel.querySelectorAll("[data-review-status]"));
+    const message = decisionPanel.querySelector(".decision-message");
+
+    buttons.forEach((button) => {
+      button.addEventListener("click", async () => {
+        const nextStatus = normalizeReviewStatus(button.dataset.reviewStatus);
+        const originalButtonStates = buttons.map((item) => ({
+          item,
+          disabled: item.disabled,
+          text: item.textContent,
+        }));
+        buttons.forEach((item) => {
+          item.disabled = true;
+        });
+        button.textContent = "Saving...";
+        message.classList.remove("error");
+        message.textContent =
+          nextStatus === "accepted" ? "Saving as accepted..." : "Saving as rejected...";
+
+        try {
+          const updatedSubmission = await updateReviewStatus(token, nextStatus);
+          app.innerHTML = receiptMarkup(updatedSubmission, true, token);
+          wireReviewDecision(token);
+        } catch (error) {
+          originalButtonStates.forEach(({ item, disabled, text }) => {
+            item.disabled = disabled;
+            item.textContent = text;
+          });
+          message.classList.add("error");
+          message.textContent = reviewStatusErrorMessage(error);
+        }
+      });
+    });
+  }
+
   function renderError(title, detail, statusText = "Not found") {
     setStatus(statusText);
     app.innerHTML = `
@@ -625,6 +790,50 @@
   function normalizeResponses(rawResponses) {
     const parsed = typeof rawResponses === "string" ? JSON.parse(rawResponses) : rawResponses || {};
     return parsed.answers || [];
+  }
+
+  function normalizeReviewStatus(value) {
+    const status = String(value || "").trim().toLowerCase();
+    return status === "accepted" || status === "rejected" ? status : "open";
+  }
+
+  function reviewStatusMeta(status) {
+    const normalizedStatus = normalizeReviewStatus(status);
+    const meta = {
+      open: {
+        label: "Open",
+        sectionTitle: "Open submissions",
+        sectionHint: "Awaiting accept or reject.",
+        emptyText: "No open submissions.",
+        reviewHint: "Choose Accept or Reject when the decision is ready.",
+      },
+      accepted: {
+        label: "Accepted",
+        sectionTitle: "Accepted submissions",
+        sectionHint: "Moved forward after review.",
+        emptyText: "No accepted submissions.",
+        reviewHint: "This submission is marked accepted. The dashboard will show it under Accepted.",
+      },
+      rejected: {
+        label: "Rejected",
+        sectionTitle: "Rejected submissions",
+        sectionHint: "Not moving forward after review.",
+        emptyText: "No rejected submissions.",
+        reviewHint: "This submission is marked rejected. The dashboard will show it under Rejected.",
+      },
+    };
+    return meta[normalizedStatus];
+  }
+
+  function reviewStatusErrorMessage(error) {
+    const message = String(error && error.message ? error.message : error || "");
+    if (
+      message.includes("set_sales_tl_submission_review_status") ||
+      message.includes("Could not find the function")
+    ) {
+      return "The review decision database update has not been applied in Supabase yet.";
+    }
+    return message || "The decision could not be saved. Please refresh and try again.";
   }
 
   function saveDemoAdminSubmission(submission) {
