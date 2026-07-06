@@ -800,6 +800,10 @@ video {
   margin: 0;
 }
 
+.starhire-decision {
+  margin: -4px 0 0;
+}
+
 .comparison {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

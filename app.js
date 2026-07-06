@@ -474,6 +474,10 @@
     const normalizedStatus = normalizeReviewStatus(reviewStatus);
 
     if (isConfigured) {
+      if (normalizedStatus === "rejected") {
+        return rejectInStarHire(token);
+      }
+
       const { data, error } = await supabaseClient.rpc("set_sales_tl_submission_review_status", {
         p_review_token: token,
         p_review_status: normalizedStatus,
@@ -510,6 +514,30 @@
     saveDemoAdminSubmission(updatedSubmission);
     await wait(250);
     return updatedSubmission;
+  }
+
+  async function rejectInStarHire(token) {
+    const functionName = config.starhireRejectFunctionName || "reject-sales-tl-scenario";
+    const response = await fetch(`${config.supabaseUrl}/functions/v1/${functionName}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: config.supabaseAnonKey,
+        Authorization: `Bearer ${config.supabaseAnonKey}`,
+      },
+      body: JSON.stringify({ review_token: token }),
+    });
+    const payload = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(payload.error || "StarHire rejection could not be completed.");
+    }
+
+    if (!payload.submission) {
+      throw new Error("StarHire rejection completed, but the updated response was not returned.");
+    }
+
+    return payload.submission;
   }
 
   function adminDashboardMarkup(submissions, token) {
@@ -710,6 +738,8 @@
   function reviewDecisionMarkup(submission, reviewToken) {
     const reviewStatus = normalizeReviewStatus(submission.review_status);
     const meta = reviewStatusMeta(reviewStatus);
+    const starhireRejectedAt = submission.starhire_rejected_at;
+    const rejectButtonText = reviewStatus === "rejected" && !starhireRejectedAt ? "Reject in StarHire" : "Reject";
     const reviewedText =
       reviewStatus !== "open" && submission.reviewed_at
         ? `${meta.label} ${formatDate(submission.reviewed_at)}`
@@ -723,15 +753,36 @@
         </div>
         <div class="decision-actions">
           <button class="primary decision-button" type="button" data-review-status="accepted" ${
-            reviewStatus === "accepted" ? "disabled" : ""
+            reviewStatus === "accepted" || starhireRejectedAt ? "disabled" : ""
           }>Accept</button>
           <button class="secondary reject-button decision-button" type="button" data-review-status="rejected" ${
-            reviewStatus === "rejected" ? "disabled" : ""
-          }>Reject</button>
+            starhireRejectedAt ? "disabled" : ""
+          }>${escapeHtml(rejectButtonText)}</button>
         </div>
         <p class="hint decision-message" aria-live="polite">${escapeHtml(meta.reviewHint)}</p>
+        ${starhireDecisionMarkup(submission)}
       </div>
     `;
+  }
+
+  function starhireDecisionMarkup(submission) {
+    if (submission.starhire_reject_error) {
+      return `<p class="error starhire-decision">StarHire issue: ${escapeHtml(submission.starhire_reject_error)}</p>`;
+    }
+
+    if (submission.starhire_rejected_at) {
+      return `<p class="hint starhire-decision">StarHire moved to Rejected ${escapeHtml(
+        formatDate(submission.starhire_rejected_at)
+      )}.</p>`;
+    }
+
+    if (submission.starhire_candidate_id) {
+      return `<p class="hint starhire-decision">Linked StarHire ID ${escapeHtml(
+        submission.starhire_candidate_id
+      )}. Reject will move this candidate to StarHire stage Rejected.</p>`;
+    }
+
+    return `<p class="hint starhire-decision">No StarHire candidate ID is stored for this response.</p>`;
   }
 
   function wireReviewDecision(token) {
@@ -744,6 +795,13 @@
     buttons.forEach((button) => {
       button.addEventListener("click", async () => {
         const nextStatus = normalizeReviewStatus(button.dataset.reviewStatus);
+        if (nextStatus === "rejected") {
+          const confirmed = window.confirm(
+            "Reject this scenario response and move the linked StarHire applicant to Rejected? This changes StarHire."
+          );
+          if (!confirmed) return;
+        }
+
         const originalButtonStates = buttons.map((item) => ({
           item,
           disabled: item.disabled,
@@ -755,7 +813,7 @@
         button.textContent = "Saving...";
         message.classList.remove("error");
         message.textContent =
-          nextStatus === "accepted" ? "Saving as accepted..." : "Saving as rejected...";
+          nextStatus === "accepted" ? "Saving as accepted..." : "Rejecting in StarHire...";
 
         try {
           const updatedSubmission = await updateReviewStatus(token, nextStatus);
@@ -828,6 +886,9 @@
       message.includes("Could not find the function")
     ) {
       return "The review decision database update has not been applied in Supabase yet.";
+    }
+    if (message.toLowerCase().includes("starhire rejection") || message.toLowerCase().includes("failed to fetch")) {
+      return "The StarHire rejection backend is not available yet. Check the Supabase function deployment and try again.";
     }
     return message || "The decision could not be saved. Please refresh and try again.";
   }

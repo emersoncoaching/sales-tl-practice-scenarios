@@ -14,7 +14,11 @@ create table if not exists public.sales_tl_scenario_submissions (
   reviewed_at timestamptz,
   user_agent text,
   notification_sent_at timestamptz,
-  notification_error text
+  notification_error text,
+  starhire_rejected_at timestamptz,
+  starhire_reject_verified_at timestamptz,
+  starhire_rejected_stage_id text,
+  starhire_reject_error text
 );
 
 alter table public.sales_tl_scenario_submissions
@@ -22,6 +26,18 @@ alter table public.sales_tl_scenario_submissions
 
 alter table public.sales_tl_scenario_submissions
   add column if not exists reviewed_at timestamptz;
+
+alter table public.sales_tl_scenario_submissions
+  add column if not exists starhire_rejected_at timestamptz;
+
+alter table public.sales_tl_scenario_submissions
+  add column if not exists starhire_reject_verified_at timestamptz;
+
+alter table public.sales_tl_scenario_submissions
+  add column if not exists starhire_rejected_stage_id text;
+
+alter table public.sales_tl_scenario_submissions
+  add column if not exists starhire_reject_error text;
 
 update public.sales_tl_scenario_submissions
 set review_status = 'open'
@@ -144,7 +160,11 @@ returns table (
   responses jsonb,
   scenario_version text,
   review_status text,
-  reviewed_at timestamptz
+  reviewed_at timestamptz,
+  starhire_rejected_at timestamptz,
+  starhire_reject_verified_at timestamptz,
+  starhire_rejected_stage_id text,
+  starhire_reject_error text
 )
 language sql
 security definer
@@ -159,7 +179,11 @@ as $$
     responses,
     scenario_version,
     review_status,
-    reviewed_at
+    reviewed_at,
+    starhire_rejected_at,
+    starhire_reject_verified_at,
+    starhire_rejected_stage_id,
+    starhire_reject_error
   from public.sales_tl_scenario_submissions
   where review_token = p_review_token
   limit 1;
@@ -182,7 +206,11 @@ returns table (
   applicant_token text,
   review_token text,
   review_status text,
-  reviewed_at timestamptz
+  reviewed_at timestamptz,
+  starhire_rejected_at timestamptz,
+  starhire_reject_verified_at timestamptz,
+  starhire_rejected_stage_id text,
+  starhire_reject_error text
 )
 language plpgsql
 security definer
@@ -206,7 +234,11 @@ begin
       submissions.applicant_token,
       submissions.review_token,
       submissions.review_status,
-      submissions.reviewed_at
+      submissions.reviewed_at,
+      submissions.starhire_rejected_at,
+      submissions.starhire_reject_verified_at,
+      submissions.starhire_rejected_stage_id,
+      submissions.starhire_reject_error
     from public.sales_tl_scenario_submissions as submissions
     order by submissions.created_at desc
     limit least(greatest(coalesce(p_limit, 100), 1), 500);
@@ -227,7 +259,11 @@ returns table (
   responses jsonb,
   scenario_version text,
   review_status text,
-  reviewed_at timestamptz
+  reviewed_at timestamptz,
+  starhire_rejected_at timestamptz,
+  starhire_reject_verified_at timestamptz,
+  starhire_rejected_stage_id text,
+  starhire_reject_error text
 )
 language plpgsql
 security definer
@@ -254,7 +290,11 @@ begin
       submissions.responses,
       submissions.scenario_version,
       submissions.review_status,
-      submissions.reviewed_at;
+      submissions.reviewed_at,
+      submissions.starhire_rejected_at,
+      submissions.starhire_reject_verified_at,
+      submissions.starhire_rejected_stage_id,
+      submissions.starhire_reject_error;
 
   if not found then
     raise exception 'Review response not found.';

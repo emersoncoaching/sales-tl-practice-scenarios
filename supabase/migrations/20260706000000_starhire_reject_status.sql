@@ -1,11 +1,3 @@
-create extension if not exists pgcrypto;
-
-alter table public.sales_tl_scenario_submissions
-  add column if not exists review_status text not null default 'open';
-
-alter table public.sales_tl_scenario_submissions
-  add column if not exists reviewed_at timestamptz;
-
 alter table public.sales_tl_scenario_submissions
   add column if not exists starhire_rejected_at timestamptz;
 
@@ -17,30 +9,6 @@ alter table public.sales_tl_scenario_submissions
 
 alter table public.sales_tl_scenario_submissions
   add column if not exists starhire_reject_error text;
-
-update public.sales_tl_scenario_submissions
-set review_status = 'open'
-where review_status is null;
-
-alter table public.sales_tl_scenario_submissions
-  alter column review_status set default 'open';
-
-alter table public.sales_tl_scenario_submissions
-  alter column review_status set not null;
-
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_constraint
-    where conname = 'sales_tl_scenario_submissions_review_status_check'
-  ) then
-    alter table public.sales_tl_scenario_submissions
-      add constraint sales_tl_scenario_submissions_review_status_check
-      check (review_status in ('open', 'accepted', 'rejected'));
-  end if;
-end;
-$$;
 
 drop function if exists public.get_sales_tl_submission_for_review(text);
 
