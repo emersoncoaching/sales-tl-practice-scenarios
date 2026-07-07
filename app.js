@@ -5,14 +5,20 @@
   const statusPill = document.querySelector("#status-pill");
   const draftKey = "sales-tl-scenarios-draft-v1";
   const privateAccessKey = "sales-tl-private-access-v1";
+  const draft = loadDraft();
+  const queryApplicant = {
+    name: getParam("name") || "",
+    email: getParam("email") || "",
+    starhireCandidateId: getParam("starhire_id") || "",
+  };
+  const hasApplicantQuery =
+    Boolean(queryApplicant.name) ||
+    Boolean(queryApplicant.email) ||
+    Boolean(queryApplicant.starhireCandidateId);
 
   const state = {
-    applicant: loadDraft().applicant || {
-      name: getParam("name") || "",
-      email: getParam("email") || "",
-      starhireCandidateId: getParam("starhire_id") || "",
-    },
-    answers: loadDraft().answers || {},
+    applicant: hasApplicantQuery ? queryApplicant : draft.applicant || queryApplicant,
+    answers: hasApplicantQuery ? {} : draft.answers || {},
     index: 0,
     isSubmitting: false,
   };
@@ -46,6 +52,12 @@
 
     if (receiptToken) {
       renderReceipt(receiptToken);
+      return;
+    }
+
+    if (state.applicant.name && isEmail(state.applicant.email)) {
+      saveDraft();
+      renderScenario(0);
       return;
     }
 
