@@ -7,9 +7,9 @@
   const privateAccessKey = "sales-tl-private-access-v1";
   const draft = loadDraft();
   const queryApplicant = {
-    name: getParam("name") || "",
-    email: getParam("email") || "",
-    starhireCandidateId: getParam("starhire_id") || "",
+    name: getCleanParam("name"),
+    email: getCleanParam("email"),
+    starhireCandidateId: getCleanParam("starhire_id"),
   };
   const hasApplicantQuery =
     Boolean(queryApplicant.name) ||
@@ -1124,6 +1124,11 @@
 
   function getParam(name) {
     return new URLSearchParams(window.location.search).get(name);
+  }
+
+  function getCleanParam(name) {
+    const value = String(getParam(name) || "").trim();
+    return /\{\{[^}]+\}\}/.test(value) ? "" : value;
   }
 
   function setStatus(text) {
