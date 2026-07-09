@@ -8,6 +8,7 @@ const corsHeaders = {
 
 const STARHIRE_API_BASE = "https://api.starhire.io/api/v1";
 const DEFAULT_SALES_TL_POSITION_ID = "293";
+const POSITION_LABEL = "Sales Team Leader";
 const REJECTED_STAGE_TITLE = "Rejected";
 
 Deno.serve(async (req) => {
@@ -59,10 +60,7 @@ Deno.serve(async (req) => {
     const submissionId = String(submission.id || "");
     submissionForError = { id: submissionId };
 
-    const candidateId = String(submission.starhire_candidate_id || "").trim();
-    if (!/^\d+$/.test(candidateId)) {
-      throw clientError("This response does not have a valid StarHire candidate ID, so StarHire was not changed.");
-    }
+    const candidateId = await resolveCandidateId(starhireApiKey, positionId, submission);
 
     const rejectedStage = await findRejectedStage(starhireApiKey, positionId);
     const candidate = unwrapCandidate(
@@ -78,9 +76,8 @@ Deno.serve(async (req) => {
 
     if (!alreadyRejected) {
       const movedCandidate = unwrapCandidate(
-        await starhireRequest(starhireApiKey, `/candidates/${encodeURIComponent(candidateId)}/stage`, {
-          method: "PATCH",
-          body: new URLSearchParams({ stage_id: String(rejectedStage.id) }),
+        await starhireRequest(starhireApiKey, `/candidates/${encodeURIComponent(candidateId)}/reject`, {
+          method: "POST",
         })
       );
 
@@ -97,6 +94,7 @@ Deno.serve(async (req) => {
       .update({
         review_status: "rejected",
         reviewed_at: now,
+        starhire_candidate_id: candidateId,
         starhire_rejected_at: now,
         starhire_reject_verified_at: now,
         starhire_rejected_stage_id: String(rejectedStage.id),
@@ -155,9 +153,62 @@ async function findRejectedStage(starhireApiKey: string, positionId: string) {
   const stages = Array.isArray(payload.stages) ? payload.stages : [];
   const stage = stages.find((item) => String(item.title || "").trim() === REJECTED_STAGE_TITLE);
   if (!stage || !stage.id) {
-    throw upstreamError(`StarHire stage "${REJECTED_STAGE_TITLE}" was not found for Sales Team Leader.`);
+    throw upstreamError(`StarHire stage "${REJECTED_STAGE_TITLE}" was not found for ${POSITION_LABEL}.`);
   }
   return stage;
+}
+
+async function resolveCandidateId(
+  starhireApiKey: string,
+  positionId: string,
+  submission: Record<string, unknown>
+) {
+  const storedCandidateId = String(submission.starhire_candidate_id || "").trim();
+  if (/^\d+$/.test(storedCandidateId)) return storedCandidateId;
+
+  const submittedEmail = String(submission.candidate_email || "").trim().toLowerCase();
+  if (!submittedEmail) {
+    throw clientError("This response has no StarHire candidate ID or email, so StarHire was not changed.");
+  }
+
+  const matches = await findCandidatesByEmail(starhireApiKey, positionId, submittedEmail);
+  if (matches.length === 0) {
+    throw clientError(
+      `No ${POSITION_LABEL} StarHire candidate matched ${submittedEmail}, so StarHire was not changed.`
+    );
+  }
+  if (matches.length > 1) {
+    throw clientError(
+      `More than one ${POSITION_LABEL} StarHire candidate matched ${submittedEmail}, so StarHire was not changed.`
+    );
+  }
+
+  return String(matches[0].id);
+}
+
+async function findCandidatesByEmail(starhireApiKey: string, positionId: string, email: string) {
+  const candidates = await listPositionCandidates(starhireApiKey, positionId);
+  return candidates.filter((candidate) => String(candidate.email || "").trim().toLowerCase() === email);
+}
+
+async function listPositionCandidates(starhireApiKey: string, positionId: string) {
+  const candidates: Array<Record<string, unknown>> = [];
+  let offset = 0;
+
+  while (true) {
+    const payload = await starhireRequest(
+      starhireApiKey,
+      `/positions/${encodeURIComponent(positionId)}/candidates?limit=100&offset=${offset}`
+    );
+    const batch = Array.isArray(payload.candidates) ? payload.candidates : [];
+    candidates.push(...batch);
+
+    const meta = payload.meta && typeof payload.meta === "object" ? (payload.meta as Record<string, unknown>) : {};
+    const limit = Number(meta.limit || 100);
+    const total = Number(meta.total || candidates.length);
+    if (!Number.isFinite(limit) || !Number.isFinite(total) || offset + limit >= total) return candidates;
+    offset += limit;
+  }
 }
 
 async function starhireRequest(

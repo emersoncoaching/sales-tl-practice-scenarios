@@ -308,6 +308,7 @@
     const demoSubmission = {
       candidate_name: state.applicant.name,
       candidate_email: state.applicant.email,
+      starhire_candidate_id: state.applicant.starhireCandidateId || null,
       created_at: new Date().toISOString(),
       review_status: "open",
       reviewed_at: null,
@@ -445,11 +446,14 @@
   async function renderReview(token) {
     setStatus("Private review");
     try {
-      const submission = isConfigured
+      let submission = isConfigured
         ? await fetchReviewSubmission(token)
         : JSON.parse(localStorage.getItem(`demo-review-${token}`) || "null");
 
       if (!submission) throw new Error("Review response not found.");
+      if (isConfigured && !submission.starhire_candidate_id) {
+        submission = await linkStarHireCandidate(token, submission);
+      }
       app.innerHTML = receiptMarkup(submission, true, token);
       wireReviewDecision(token);
     } catch (error) {
@@ -550,6 +554,28 @@
     }
 
     return payload.submission;
+  }
+
+  async function linkStarHireCandidate(token, fallbackSubmission) {
+    const functionName = config.starhireLinkFunctionName;
+    if (!functionName) return fallbackSubmission;
+
+    try {
+      const response = await fetch(`${config.supabaseUrl}/functions/v1/${functionName}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: config.supabaseAnonKey,
+          Authorization: `Bearer ${config.supabaseAnonKey}`,
+        },
+        body: JSON.stringify({ review_token: token }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.submission) return fallbackSubmission;
+      return payload.submission;
+    } catch {
+      return fallbackSubmission;
+    }
   }
 
   function adminDashboardMarkup(submissions, token) {
@@ -663,7 +689,7 @@
           }
           ${
             submission.starhire_candidate_id
-              ? `<span>StarHire ID ${escapeHtml(submission.starhire_candidate_id)}</span>`
+              ? `<a href="${escapeAttr(starhireCandidateUrl(submission.starhire_candidate_id))}" target="_blank" rel="noopener">Open StarHire</a>`
               : ""
           }
         </div>
@@ -778,6 +804,10 @@
   }
 
   function starhireDecisionMarkup(submission) {
+    const candidateLink = submission.starhire_candidate_id
+      ? starhireCandidateUrl(submission.starhire_candidate_id)
+      : "";
+
     if (submission.starhire_reject_error) {
       return `<p class="error starhire-decision">StarHire issue: ${escapeHtml(submission.starhire_reject_error)}</p>`;
     }
@@ -785,16 +815,14 @@
     if (submission.starhire_rejected_at) {
       return `<p class="hint starhire-decision">StarHire moved to Rejected ${escapeHtml(
         formatDate(submission.starhire_rejected_at)
-      )}.</p>`;
+      )}.${candidateLink ? ` <a href="${escapeAttr(candidateLink)}" target="_blank" rel="noopener">Open StarHire candidate</a>` : ""}</p>`;
     }
 
-    if (submission.starhire_candidate_id) {
-      return `<p class="hint starhire-decision">Linked StarHire ID ${escapeHtml(
-        submission.starhire_candidate_id
-      )}. Reject will move this candidate to StarHire stage Rejected.</p>`;
+    if (candidateLink) {
+      return `<p class="hint starhire-decision"><a href="${escapeAttr(candidateLink)}" target="_blank" rel="noopener">Open StarHire candidate</a>. Reject will move this candidate to StarHire stage Rejected.</p>`;
     }
 
-    return `<p class="hint starhire-decision">No StarHire candidate ID is stored for this response.</p>`;
+    return `<p class="hint starhire-decision">No StarHire candidate ID was captured. Reject will try an exact email match in StarHire before moving anyone.</p>`;
   }
 
   function wireReviewDecision(token) {
@@ -1084,6 +1112,11 @@
       applicantUrl: `${base}?receipt=${encodeURIComponent(applicantToken)}`,
       reviewUrl: `${base}?review=${encodeURIComponent(reviewToken)}`,
     };
+  }
+
+  function starhireCandidateUrl(candidateId) {
+    const positionId = config.starhirePositionId || "293";
+    return `https://app.starhire.io/emersoncoaching/positions/${encodeURIComponent(positionId)}/candidates/${encodeURIComponent(candidateId)}`;
   }
 
   function configWarning() {
