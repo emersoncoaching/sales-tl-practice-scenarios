@@ -4,6 +4,7 @@ window.SALES_TL_CONFIG = {
   notifyFunctionName: "notify-sales-tl-submission",
   starhireRejectFunctionName: "reject-sales-tl-scenario",
   starhireLinkFunctionName: "link-sales-tl-starhire-candidate",
+  starhireLookupFunctionName: "lookup-sales-tl-starhire-candidate",
   starhirePositionId: "293",
   reviewerEmail: "dan@emersoncoaching.com.au",
   privateAccessPasswordHash: "21a0250ede33555c460c484ec82a10c3acb6bcce60ecd5a1b05e1e5cfc7cead2",

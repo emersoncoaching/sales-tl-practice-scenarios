@@ -9,7 +9,7 @@
   const queryApplicant = {
     name: getCleanParam("name"),
     email: getCleanParam("email"),
-    starhireCandidateId: getCleanParam("starhire_id"),
+    starhireCandidateId: getCleanParam("starhire_id") || getCleanParam("candidate_id"),
   };
   const hasApplicantQuery =
     Boolean(queryApplicant.name) ||
@@ -35,7 +35,7 @@
 
   init();
 
-  function init() {
+  async function init() {
     const adminToken = getParam("admin");
     const reviewToken = getParam("review");
     const receiptToken = getParam("receipt");
@@ -55,6 +55,21 @@
       return;
     }
 
+    // Arriving from an emailed link (?candidate_id={{candidate_id}}): resolve the
+    // candidate's name + email from StarHire server-side so we can skip the form.
+    const candidateId = getCleanParam("candidate_id");
+    if (candidateId && !(state.applicant.name && isEmail(state.applicant.email))) {
+      const resolved = await resolveStarhireApplicant(candidateId);
+      if (resolved) {
+        state.applicant = {
+          name: resolved.name || state.applicant.name || "",
+          email: isEmail(resolved.email) ? resolved.email : state.applicant.email || "",
+          starhireCandidateId:
+            resolved.id || state.applicant.starhireCandidateId || candidateId,
+        };
+      }
+    }
+
     if (state.applicant.name && isEmail(state.applicant.email)) {
       saveDraft();
       renderScenario(0);
@@ -62,6 +77,39 @@
     }
 
     renderStart();
+  }
+
+  async function resolveStarhireApplicant(candidateId) {
+    const functionName = config.starhireLookupFunctionName;
+    if (!isConfigured || !functionName) return null;
+    setStatus("Loading");
+    app.innerHTML = `
+      <section class="start-layout">
+        <div class="panel start-panel"><p>Loading your details…</p></div>
+      </section>
+    `;
+    try {
+      const response = await fetch(`${config.supabaseUrl}/functions/v1/${functionName}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: config.supabaseAnonKey,
+          Authorization: `Bearer ${config.supabaseAnonKey}`,
+        },
+        body: JSON.stringify({ candidate_id: candidateId }),
+      });
+      if (!response.ok) return null;
+      const payload = await response.json().catch(() => ({}));
+      const candidate = payload && payload.candidate;
+      if (!candidate || !candidate.name) return null;
+      return {
+        id: String(candidate.id || candidateId),
+        name: String(candidate.name || ""),
+        email: String(candidate.email || ""),
+      };
+    } catch (_error) {
+      return null;
+    }
   }
 
   function renderStart() {
