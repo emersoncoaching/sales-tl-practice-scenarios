@@ -503,7 +503,7 @@
         submission = await linkStarHireCandidate(token, submission);
       }
       app.innerHTML = receiptMarkup(submission, true, token);
-      wireReviewDecision(token);
+      wireReviewDecision(token, submission);
     } catch (error) {
       renderError("Review response not found", error.message);
     }
@@ -786,6 +786,7 @@
               : ""
           }
           <p class="hint">Submitted ${formatDate(submission.created_at)}</p>
+          ${includeDanResponses ? reviewCopyMarkup() : ""}
           ${includeDanResponses ? reviewDecisionMarkup(submission, reviewToken) : ""}
         </aside>
         <div class="panel form-panel">
@@ -873,7 +874,18 @@
     return `<p class="hint starhire-decision">No StarHire candidate ID was captured. Reject will try an exact email match in StarHire before moving anyone.</p>`;
   }
 
-  function wireReviewDecision(token) {
+  function reviewCopyMarkup() {
+    return `
+      <div class="review-copy">
+        <button class="secondary copy-transcripts-button" type="button" id="copy-transcripts">Copy Transcripts</button>
+        <p class="hint copy-transcripts-message" aria-live="polite"></p>
+      </div>
+    `;
+  }
+
+  function wireReviewDecision(token, submission) {
+    wireTranscriptCopy(token, submission);
+
     const decisionPanel = document.querySelector(".review-decision");
     if (!decisionPanel) return;
 
@@ -906,7 +918,7 @@
         try {
           const updatedSubmission = await updateReviewStatus(token, nextStatus);
           app.innerHTML = receiptMarkup(updatedSubmission, true, token);
-          wireReviewDecision(token);
+          wireReviewDecision(token, updatedSubmission);
         } catch (error) {
           originalButtonStates.forEach(({ item, disabled, text }) => {
             item.disabled = disabled;
@@ -917,6 +929,146 @@
         }
       });
     });
+  }
+
+  function wireTranscriptCopy(token, submission) {
+    const copyButton = document.querySelector("#copy-transcripts");
+    if (!copyButton || !submission) return;
+
+    const message = document.querySelector(".copy-transcripts-message");
+
+    copyButton.addEventListener("click", async () => {
+      const originalText = copyButton.textContent;
+      copyButton.disabled = true;
+      copyButton.textContent = "Copying...";
+      if (message) {
+        message.classList.remove("error");
+        message.textContent = "";
+      }
+
+      try {
+        await copyTextToClipboard(buildReviewTranscriptText(submission, token));
+        copyButton.textContent = "Copied";
+        if (message) message.textContent = "Copied to clipboard.";
+        window.setTimeout(() => {
+          copyButton.disabled = false;
+          copyButton.textContent = originalText;
+          if (message) message.textContent = "";
+        }, 1800);
+      } catch (_error) {
+        copyButton.disabled = false;
+        copyButton.textContent = originalText;
+        if (message) {
+          message.classList.add("error");
+          message.textContent = "Could not copy. Please refresh and try again.";
+        }
+      }
+    });
+  }
+
+  function buildReviewTranscriptText(submission, reviewToken) {
+    const responses = normalizeResponses(submission.responses);
+    const lines = [];
+
+    lines.push(`${cleanText(submission.candidate_name || "Applicant")} - Sales TL Practice Scenarios`);
+    if (submission.candidate_email) lines.push(cleanText(submission.candidate_email));
+    if (submission.created_at) lines.push(`Submitted ${formatDate(submission.created_at)}`);
+    if (submission.starhire_candidate_id) {
+      lines.push(`StarHire candidate ID: ${cleanText(submission.starhire_candidate_id)}`);
+    }
+    if (reviewToken) {
+      lines.push("");
+      lines.push(`Review URL: ${reviewUrlForToken(reviewToken)}`);
+    }
+    lines.push("");
+    lines.push("========================================================================");
+
+    responses.forEach((response, index) => {
+      const scenario = scenarios.find((item) => item.id === response.id) || scenarios[index] || {};
+      const title = cleanText(response.title || scenario.title || `Scenario ${index + 1}`);
+      const prompt = cleanText(response.prompt || scenario.prompt || "");
+      const transcript = cleanText(scenario.videoTranscript || "");
+      const danResponse = cleanText(scenario.danResponse || "");
+      const applicantResponse = cleanText(responseTextForExport(response));
+
+      lines.push("");
+      lines.push(`SCENARIO ${index + 1}: ${title}`);
+      if (prompt) lines.push(prompt);
+      lines.push("");
+      lines.push("VIDEO TRANSCRIPT");
+      lines.push("------------------------------------------------------------------------");
+      lines.push(transcript || "[No video transcript available]");
+      lines.push("");
+      lines.push("DAN'S RESPONSE");
+      lines.push("------------------------------------------------------------------------");
+      lines.push(danResponse || "[No Dan response available]");
+      lines.push("");
+      lines.push("APPLICANT RESPONSE");
+      lines.push("------------------------------------------------------------------------");
+      lines.push(applicantResponse || "[No applicant response saved]");
+      lines.push("");
+      lines.push("========================================================================");
+    });
+
+    return `${lines.join("\n").trim()}\n`;
+  }
+
+  async function copyTextToClipboard(text) {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return;
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.left = "-9999px";
+    document.body.append(textarea);
+    textarea.select();
+    const copied = document.execCommand("copy");
+    textarea.remove();
+    if (!copied) throw new Error("Copy failed.");
+  }
+
+  function reviewUrlForToken(token) {
+    const url = new URL(window.location.href);
+    url.search = "";
+    url.searchParams.set("review", token);
+    return url.toString();
+  }
+
+  function responseTextForExport(response) {
+    const html = String(response.answerHtml || "").trim();
+    if (html) return richTextToExportText(html);
+    return response.answer || "";
+  }
+
+  function richTextToExportText(html) {
+    const container = document.createElement("div");
+    container.innerHTML = sanitizeRichHtml(html);
+    container.querySelectorAll("ol, ul").forEach((list) => {
+      Array.from(list.children)
+        .filter((item) => item.tagName === "LI")
+        .forEach((item, index) => {
+          const marker = list.tagName === "OL" ? `${index + 1}. ` : "- ";
+          item.insertBefore(document.createTextNode(marker), item.firstChild);
+        });
+    });
+    container.querySelectorAll("br").forEach((node) => node.replaceWith("\n"));
+    container.querySelectorAll("p, li, div").forEach((node) => {
+      node.append(document.createTextNode("\n"));
+    });
+    return cleanText(container.textContent);
+  }
+
+  function cleanText(value) {
+    return String(value || "")
+      .replace(/\r\n/g, "\n")
+      .replace(/\u00a0/g, " ")
+      .replace(/[ \t]+\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
   }
 
   function renderError(title, detail, statusText = "Not found") {

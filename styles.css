@@ -747,6 +747,23 @@ video {
   margin-left: auto;
 }
 
+.review-copy {
+  display: grid;
+  gap: 8px;
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+
+.copy-transcripts-button {
+  width: 100%;
+}
+
+.copy-transcripts-message {
+  min-height: 1.35em;
+  margin: 0;
+}
+
 .empty-dashboard {
   padding: clamp(22px, 4vw, 34px);
 }
