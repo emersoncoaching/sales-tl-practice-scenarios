@@ -11,7 +11,9 @@ Target live site: https://emersoncoaching.github.io/sales-tl-practice-scenarios/
 - The four compressed scenario videos are included in `assets/videos/`.
 - Applicants submit text responses with light rich text formatting.
 - Dan reviews submissions from the private dashboard URL stored in `private/admin-dashboard.md`.
-- Review pages can mark submissions accepted or rejected, and the dashboard groups open, accepted, and rejected submissions.
+- Accept, Reject and Archive are available directly on the dashboard cards and review pages. Submissions are grouped into Open, Accepted, Rejected and Archived.
+- Archive moves an open submission to Archived without sending an email or changing StarHire. Archived responses stay accessible and can be restored to Open.
+- Reject asks for confirmation and uses the existing StarHire rejection action.
 - Rejecting a review response can also move the linked StarHire candidate to the StarHire stage `Rejected`.
 - Dan-facing dashboard and review pages require a one-time private-access password in each browser.
 
@@ -22,6 +24,8 @@ Email notifications are intentionally not required. The dashboard uses an ungues
 To enable the dashboard and review-status actions in Supabase, run `supabase/admin-dashboard.sql` in the Supabase SQL editor.
 
 The real admin token is not committed to GitHub. Keep `private/admin-dashboard.md` local.
+
+For an existing database, apply `supabase/migrations/20261005000000_sales_tl_archived_status.sql` to enable archiving.
 
 The private-access password itself is not committed; the public app stores only the SHA-256 hash used for the browser gate.
 

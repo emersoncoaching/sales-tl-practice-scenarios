@@ -10,7 +10,7 @@ create table if not exists public.sales_tl_scenario_submissions (
   responses jsonb not null,
   applicant_token text not null unique default encode(gen_random_bytes(24), 'hex'),
   review_token text not null unique default encode(gen_random_bytes(24), 'hex'),
-  review_status text not null default 'open' constraint sales_tl_scenario_submissions_review_status_check check (review_status in ('open', 'accepted', 'rejected')),
+  review_status text not null default 'open' constraint sales_tl_scenario_submissions_review_status_check check (review_status in ('open', 'accepted', 'rejected', 'archived')),
   reviewed_at timestamptz,
   user_agent text,
   notification_sent_at timestamptz,
@@ -49,19 +49,12 @@ alter table public.sales_tl_scenario_submissions
 alter table public.sales_tl_scenario_submissions
   alter column review_status set not null;
 
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_constraint
-    where conname = 'sales_tl_scenario_submissions_review_status_check'
-  ) then
-    alter table public.sales_tl_scenario_submissions
-      add constraint sales_tl_scenario_submissions_review_status_check
-      check (review_status in ('open', 'accepted', 'rejected'));
-  end if;
-end;
-$$;
+alter table public.sales_tl_scenario_submissions
+  drop constraint if exists sales_tl_scenario_submissions_review_status_check;
+
+alter table public.sales_tl_scenario_submissions
+  add constraint sales_tl_scenario_submissions_review_status_check
+  check (review_status in ('open', 'accepted', 'rejected', 'archived'));
 
 alter table public.sales_tl_scenario_submissions enable row level security;
 
@@ -272,8 +265,8 @@ as $$
 declare
   v_review_status text := lower(trim(coalesce(p_review_status, '')));
 begin
-  if v_review_status not in ('open', 'accepted', 'rejected') then
-    raise exception 'Review status must be open, accepted, or rejected.';
+  if v_review_status not in ('open', 'accepted', 'rejected', 'archived') then
+    raise exception 'Review status must be open, accepted, rejected, or archived.';
   end if;
 
   return query

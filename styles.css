@@ -743,6 +743,12 @@ video {
   color: #963f4c;
 }
 
+.status-archived {
+  border-color: var(--line);
+  background: #eef1f5;
+  color: var(--muted);
+}
+
 .copy-link {
   margin-left: auto;
 }
@@ -802,6 +808,11 @@ video {
 
 .decision-actions {
   margin-top: 0;
+}
+
+.card-decision-actions {
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
 }
 
 .decision-button {

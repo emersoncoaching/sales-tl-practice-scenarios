@@ -28,19 +28,12 @@ alter table public.sales_tl_scenario_submissions
 alter table public.sales_tl_scenario_submissions
   alter column review_status set not null;
 
-do $$
-begin
-  if not exists (
-    select 1
-    from pg_constraint
-    where conname = 'sales_tl_scenario_submissions_review_status_check'
-  ) then
-    alter table public.sales_tl_scenario_submissions
-      add constraint sales_tl_scenario_submissions_review_status_check
-      check (review_status in ('open', 'accepted', 'rejected'));
-  end if;
-end;
-$$;
+alter table public.sales_tl_scenario_submissions
+  drop constraint if exists sales_tl_scenario_submissions_review_status_check;
+
+alter table public.sales_tl_scenario_submissions
+  add constraint sales_tl_scenario_submissions_review_status_check
+  check (review_status in ('open', 'accepted', 'rejected', 'archived'));
 
 drop function if exists public.get_sales_tl_submission_for_review(text);
 
@@ -167,8 +160,8 @@ as $$
 declare
   v_review_status text := lower(trim(coalesce(p_review_status, '')));
 begin
-  if v_review_status not in ('open', 'accepted', 'rejected') then
-    raise exception 'Review status must be open, accepted, or rejected.';
+  if v_review_status not in ('open', 'accepted', 'rejected', 'archived') then
+    raise exception 'Review status must be open, accepted, rejected, or archived.';
   end if;
 
   return query

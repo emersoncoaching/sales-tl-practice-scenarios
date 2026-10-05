@@ -658,6 +658,10 @@
               <span class="summary-label">rejected</span>
             </div>
             <div>
+              <span class="summary-number">${groupedSubmissions.archived.length}</span>
+              <span class="summary-label">archived</span>
+            </div>
+            <div>
               <span class="summary-label">Latest</span>
               <span class="summary-detail">${
                 latestSubmission ? escapeHtml(formatDate(latestSubmission.created_at)) : "No submissions yet"
@@ -670,6 +674,7 @@
                   ${dashboardStatusSectionMarkup("open", groupedSubmissions.open)}
                   ${dashboardStatusSectionMarkup("accepted", groupedSubmissions.accepted)}
                   ${dashboardStatusSectionMarkup("rejected", groupedSubmissions.rejected)}
+                  ${dashboardStatusSectionMarkup("archived", groupedSubmissions.archived)}
                 </div>`
               : emptyDashboardMarkup()
           }
@@ -684,7 +689,7 @@
         groups[normalizeReviewStatus(submission.review_status)].push(submission);
         return groups;
       },
-      { open: [], accepted: [], rejected: [] }
+      { open: [], accepted: [], rejected: [], archived: [] }
     );
   }
 
@@ -746,6 +751,7 @@
           <a class="secondary" href="${escapeAttr(urls.applicantUrl)}" target="_blank" rel="noopener">Applicant URL</a>
           <button class="text-button copy-link" type="button" data-copy-url="${escapeAttr(urls.reviewUrl)}">Copy review link</button>
         </div>
+        ${dashboardDecisionMarkup(submission)}
       </article>
     `;
   }
@@ -771,6 +777,60 @@
         button.textContent = "Copied";
       });
     });
+
+    document.querySelectorAll("[data-card-review-status]").forEach((button) => {
+      button.addEventListener("click", async () => {
+        const card = button.closest(".submission-card");
+        const nextStatus = normalizeReviewStatus(button.dataset.cardReviewStatus);
+        if (nextStatus === "rejected" && !window.confirm(
+          "Reject " + card.querySelector("h3").textContent + " and move the linked StarHire applicant to Rejected? This changes StarHire."
+        )) return;
+        const existingError = card.querySelector(".decision-error");
+        if (existingError) existingError.remove();
+        const originalButtonStates = Array.from(card.querySelectorAll("[data-card-review-status]")).map((item) => ({
+          item, disabled: item.disabled, text: item.textContent,
+        }));
+        originalButtonStates.forEach(({ item }) => { item.disabled = true; });
+        button.textContent = "Saving...";
+        try {
+          await updateReviewStatus(button.dataset.reviewToken, nextStatus);
+          await renderAdminDashboard(token);
+        } catch (error) {
+          originalButtonStates.forEach(({ item, disabled, text }) => {
+            item.disabled = disabled;
+            item.textContent = text;
+          });
+          const message = document.createElement("p");
+          message.className = "error decision-error";
+          message.setAttribute("role", "alert");
+          message.textContent = reviewStatusErrorMessage(error, nextStatus);
+          card.append(message);
+        }
+      });
+    });
+  }
+
+  function dashboardDecisionMarkup(submission) {
+    const status = normalizeReviewStatus(submission.review_status);
+    const token = escapeAttr(submission.review_token);
+    const rejectedInStarHire = Boolean(submission.starhire_rejected_at);
+    return `
+      <div class="decision-actions card-decision-actions" role="group" aria-label="Decision for ${escapeAttr(submission.candidate_name || "Applicant")}">
+        <button class="primary decision-button" type="button" data-card-review-status="accepted" data-review-token="${token}" ${status === "accepted" || rejectedInStarHire ? "disabled" : ""}>Accept</button>
+        <button class="secondary reject-button decision-button" type="button" data-card-review-status="rejected" data-review-token="${token}" ${rejectedInStarHire ? "disabled" : ""}>${status === "rejected" && !rejectedInStarHire ? "Reject in StarHire" : "Reject"}</button>
+        ${archiveActionMarkup(status, submission.review_token)}
+      </div>
+    `;
+  }
+
+  function archiveActionMarkup(status, token, inReview = false) {
+    if (status !== "open" && status !== "archived") return "";
+    const nextStatus = status === "archived" ? "open" : "archived";
+    const label = status === "archived" ? "Restore to Open" : "Archive";
+    const attributes = inReview
+      ? `data-review-status="${nextStatus}"`
+      : `data-card-review-status="${nextStatus}" data-review-token="${escapeAttr(token)}"`;
+    return `<button class="secondary decision-button" type="button" ${attributes}>${label}</button>`;
   }
 
   function receiptMarkup(submission, includeDanResponses, reviewToken = "") {
@@ -845,6 +905,7 @@
           <button class="secondary reject-button decision-button" type="button" data-review-status="rejected" ${
             starhireRejectedAt ? "disabled" : ""
           }>${escapeHtml(rejectButtonText)}</button>
+          ${archiveActionMarkup(reviewStatus, reviewToken, true)}
         </div>
         <p class="hint decision-message" aria-live="polite">${escapeHtml(meta.reviewHint)}</p>
         ${starhireDecisionMarkup(submission)}
@@ -912,8 +973,12 @@
         });
         button.textContent = "Saving...";
         message.classList.remove("error");
-        message.textContent =
-          nextStatus === "accepted" ? "Saving as accepted..." : "Rejecting in StarHire...";
+        message.textContent = {
+          open: "Restoring to Open...",
+          accepted: "Saving as accepted...",
+          rejected: "Rejecting in StarHire...",
+          archived: "Archiving...",
+        }[nextStatus];
 
         try {
           const updatedSubmission = await updateReviewStatus(token, nextStatus);
@@ -925,7 +990,7 @@
             item.textContent = text;
           });
           message.classList.add("error");
-          message.textContent = reviewStatusErrorMessage(error);
+          message.textContent = reviewStatusErrorMessage(error, nextStatus);
         }
       });
     });
@@ -1091,7 +1156,7 @@
 
   function normalizeReviewStatus(value) {
     const status = String(value || "").trim().toLowerCase();
-    return status === "accepted" || status === "rejected" ? status : "open";
+    return ["accepted", "rejected", "archived"].includes(status) ? status : "open";
   }
 
   function reviewStatusMeta(status) {
@@ -1101,7 +1166,7 @@
         label: "Open",
         sectionTitle: "Open submissions",
         emptyText: "No open submissions.",
-        reviewHint: "Choose Accept or Reject when the decision is ready.",
+        reviewHint: "Choose Accept or Reject, or Archive without sending a rejection email.",
       },
       accepted: {
         label: "Accepted",
@@ -1115,17 +1180,26 @@
         emptyText: "No rejected submissions.",
         reviewHint: "This submission is marked rejected. The dashboard will show it under Rejected.",
       },
+      archived: {
+        label: "Archived",
+        sectionTitle: "Archived submissions",
+        emptyText: "No archived submissions.",
+        reviewHint: "This submission is archived. No rejection email was sent. You can restore it to Open.",
+      },
     };
     return meta[normalizedStatus];
   }
 
-  function reviewStatusErrorMessage(error) {
+  function reviewStatusErrorMessage(error, reviewStatus) {
     const message = String(error && error.message ? error.message : error || "");
     if (
       message.includes("set_sales_tl_submission_review_status") ||
       message.includes("Could not find the function")
     ) {
       return "The review decision database update has not been applied in Supabase yet.";
+    }
+    if (message.toLowerCase().includes("failed to fetch") && reviewStatus !== "rejected") {
+      return "The submission service could not be reached. Please try again.";
     }
     if (message.toLowerCase().includes("starhire rejection") || message.toLowerCase().includes("failed to fetch")) {
       return "The StarHire rejection backend is not available yet. Check the Supabase function deployment and try again.";
